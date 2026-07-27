@@ -1,0 +1,14 @@
+.auth-page h1 {
+  text-align: center;
+  margin-bottom: 8px;
+}
+.auth-page p {
+  text-align: center;
+  font-size: 14px;
+  color: #160808;
+}
+.input-error {
+  color: red;
+  border-color: red;
+  background: #ffe6e6;
+}
