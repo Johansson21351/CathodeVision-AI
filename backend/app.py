@@ -19,8 +19,13 @@ load_dotenv()
 def create_app():
     app = Flask(__name__)
 
-    frontend_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
-    CORS(app, origins=[frontend_origin])
+    # Comma-separated so local dev (5173) and a deployed Netlify domain can both call this API.
+    frontend_origins = [
+        origin.strip()
+        for origin in os.getenv("FRONTEND_ORIGIN", "http://localhost:5173").split(",")
+        if origin.strip()
+    ]
+    CORS(app, origins=frontend_origins)
 
     app.teardown_appcontext(close_db)
 
