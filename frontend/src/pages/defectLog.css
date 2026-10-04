@@ -1,0 +1,46 @@
+.defect-page{
+  min-height:100vh;
+  padding:28px;
+  background:linear-gradient(180deg,#0f1720 0%, #071018 100%);
+  color:#cbd5e1;
+  font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+}
+.defect-header{display:flex;flex-direction:column;gap:18px;margin-bottom:18px}
+.metrics{display:flex;gap:18px}
+.metric{background:transparent;padding:14px 18px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);min-width:160px}
+.metric-title{font-size:12px;color:#94a3b8}
+.metric-value{font-size:20px;font-weight:700;margin-top:6px}
+.metric-value.critical{color:#f87171}
+.metric-value.pending{color:#f59e0b}
+.metric-value.confirmed{color:#34d399}
+
+.controls{display:flex;align-items:center;gap:12px;justify-content:space-between}
+.search{flex:1;padding:10px 12px;border-radius:8px;background:#0b1220;border:1px solid rgba(255,255,255,0.03);color:#e6eef6}
+.filters{display:flex;gap:8px;align-items:center}
+.filters select{padding:8px;border-radius:8px;background:#071018;color:#cbd5e1;border:1px solid rgba(255,255,255,0.03)}
+.export{background:transparent;border:1px solid rgba(255,255,255,0.06);color:#9ca3af;padding:8px 10px;border-radius:8px}
+
+.defect-table{margin-top:12px;background:rgba(255,255,255,0.02);border-radius:10px;padding:8px}
+.table-row{display:grid;grid-template-columns:180px 120px 92px 160px 90px 220px 120px 160px 90px;align-items:center;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.02)}
+.table-head{font-size:12px;color:#9ca3af;border-bottom:1px solid rgba(255,255,255,0.06)}
+.col.img img{width:64px;height:40px;object-fit:cover;border-radius:4px}
+.badge{display:inline-block;padding:6px 10px;border-radius:6px;font-weight:700;font-size:12px}
+.badge-type{background:#2b3340;color:#f8fafc}
+.badge-contamination{background:#ef4444;color:#fff}
+.badge-scratch{background:#f59e0b;color:#111}
+.badge-crack{background:#ef4444;color:#fff}
+.conf-bar{height:8px;background:rgba(255,255,255,0.06);border-radius:6px;overflow:hidden;margin-right:8px}
+.conf-fill{height:100%;background:linear-gradient(90deg,#34d399,#10b981)}
+.conf-num{font-weight:700;color:#cbd5e1;font-size:13px;margin-left:8px}
+.badge.pending{background:#f59e0b;color:#081018}
+.badge.confirmed{background:#0ea5a0;color:#081018}
+.badge.rejected{background:#ef4444;color:#fff}
+.review{background:#064e3b;color:#fff;padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.06)}
+.pin-note{color:#94a3b8;font-size:13px;margin:6px 0}
+.error{color:#ef4444;font-weight:700;margin:8px 0}
+.small{font-size:11px;color:#94a3b8;margin-top:4px}
+.export:disabled{opacity:0.4;cursor:not-allowed}
+
+@media (max-width: 900px){
+  .table-row{grid-template-columns:140px 100px 72px 1fr}
+}

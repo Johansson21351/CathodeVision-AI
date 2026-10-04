@@ -5,10 +5,10 @@
 .auth-page p {
   text-align: center;
   font-size: 14px;
-  color: #160808;
+  color: var(--muted);
 }
 .input-error {
-  color: red;
-  border-color: red;
-  background: #ffe6e6;
+  color: var(--danger, #ef4444);
+  border-color: var(--danger, #ef4444);
+  background: rgba(239, 68, 68, 0.08);
 }

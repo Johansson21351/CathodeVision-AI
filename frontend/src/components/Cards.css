@@ -1,0 +1,63 @@
+.card{
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 18px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    min-height: 120px;
+}
+
+/* stat variant */
+.card--stat {
+    padding: 18px 18px 16px;
+}
+
+.card-header{
+    display:flex;
+    align-items:center;
+    gap:12px;
+}
+
+.card-title{
+    color: var(--muted);
+    font-size: 0.78rem;
+    text-transform:uppercase;
+    letter-spacing:0.14em;
+    font-weight:800;
+}
+
+.card-icon{
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    font-size:14px;
+    opacity:0.9;
+    background: var(--card-icon-bg);
+    color: var(--card-icon-color);
+    padding:6px;
+    border-radius:8px;
+}
+
+.card-body{
+    margin-top:8px;
+}
+
+.card-value{
+    font-size:3.0rem;
+    font-weight:900;
+    color: var(--accent);
+    letter-spacing:-0.02em;
+    line-height:0.95;
+}
+
+.card-note{
+    color:var(--muted);
+    font-size:0.85rem;
+    margin-top:6px;
+}
+
+@media (max-width:720px){
+    .card-value{font-size:2.6rem}
+}

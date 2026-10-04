@@ -1,0 +1,41 @@
+.personal-key-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  align-items: center;
+}
+
+.personal-key-field > label {
+  color: var(--muted);
+  font-size: 14px;
+  width: 100%;
+  text-align: center;
+}
+
+.personal-key-boxes {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.personal-key-boxes input {
+  width: 54px;
+  height: 56px;
+  padding: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel-strong);
+  color: var(--text);
+  font-size: 24px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.personal-key-boxes input:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(125, 211, 252, 0.12);
+}
