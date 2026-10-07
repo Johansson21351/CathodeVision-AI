@@ -73,10 +73,22 @@ def list_inspections():
 @bp.get("/inspections/<int:inspection_id>/image")
 @token_required
 def get_inspection_image(inspection_id):
-    inspection = query(
-        "SELECT image_path FROM inspections WHERE id = %s AND user_id = %s",
-        (inspection_id, g.user_id), one=True,
-    )
+    role = request.args.get("role", "").strip()
+    if role and role not in {"top", "terminal_side", "label_closeup"}:
+        return jsonify({"error": "Invalid image role"}), 400
+
+    if role:
+        inspection = query(
+            "SELECT ii.image_path FROM inspection_images ii "
+            "JOIN inspections i ON i.id = ii.inspection_id "
+            "WHERE i.id = %s AND i.user_id = %s AND ii.role = %s",
+            (inspection_id, g.user_id, role), one=True,
+        )
+    else:
+        inspection = query(
+            "SELECT image_path FROM inspections WHERE id = %s AND user_id = %s",
+            (inspection_id, g.user_id), one=True,
+        )
     if inspection is None or not inspection["image_path"]:
         return jsonify({"error": "Image not found"}), 404
 
@@ -88,9 +100,10 @@ def get_inspection_image(inspection_id):
 @token_required
 def hold_recommendation():
     inspection = query(
-        "SELECT id, defect_type, description, confidence FROM inspections "
+        "SELECT id, defect_type, description, severity, disposition, label_text, lot_id "
+        "FROM inspections "
         "WHERE user_id = %s AND is_battery = 1 AND analysis_status = 'COMPLETED' "
-        "AND confidence >= 0.30 AND confidence <= 0.55 "
+        "AND disposition = 'HOLD' "
         "ORDER BY created_at DESC LIMIT 1",
         (g.user_id,),
         one=True,
@@ -98,11 +111,19 @@ def hold_recommendation():
     if inspection is None:
         return jsonify({"error": "No item currently requires HOLD review"}), 404
 
+    # Policy reasons aren't stored separately; rebuild the agent context from
+    # the persisted description, falling back to the recorded severity.
+    reasons = [inspection["description"]] if inspection["description"] else [
+        f"Recorded severity: {inspection['severity'] or 'unknown'}."
+    ]
+
     try:
         recommendation = recommend_action(
-            inspection["defect_type"],
-            inspection["description"],
-            float(inspection["confidence"] or 0),
+            inspection["disposition"],
+            inspection["severity"],
+            reasons,
+            inspection["lot_id"],
+            inspection["label_text"],
         )
     except AIUnavailable as error:
         return jsonify({"error": str(error)}), 503
@@ -193,24 +214,54 @@ def dashboard():
         (g.user_id,),
     )
     latest = query(
-        "SELECT has_defect, confidence FROM inspections "
+        "SELECT disposition FROM inspections "
         "WHERE user_id = %s AND is_battery = 1 AND analysis_status = 'COMPLETED' "
         "ORDER BY created_at DESC LIMIT 1",
         (g.user_id,),
         one=True,
     )
+    agreement_summary = query(
+        "SELECT COUNT(*) AS reviewed_count, "
+        "COALESCE(SUM(r.corrected_type = i.defect_type), 0) AS agreement_count "
+        "FROM inspections i JOIN inspection_reviews r ON r.inspection_id = i.id "
+        "WHERE i.user_id = %s AND i.is_battery = 1 "
+        "AND i.analysis_status = 'COMPLETED' "
+        "AND r.status IN ('APPROVED', 'REJECTED') AND r.corrected_type IS NOT NULL",
+        (g.user_id,),
+        one=True,
+    )
+    agreement_by_type = query(
+        "SELECT COALESCE(i.defect_type, 'UNKNOWN') AS defect_type, "
+        "COUNT(*) AS reviewed_count, "
+        "COALESCE(SUM(r.corrected_type = i.defect_type), 0) AS agreement_count "
+        "FROM inspections i JOIN inspection_reviews r ON r.inspection_id = i.id "
+        "WHERE i.user_id = %s AND i.is_battery = 1 "
+        "AND i.analysis_status = 'COMPLETED' "
+        "AND r.status IN ('APPROVED', 'REJECTED') AND r.corrected_type IS NOT NULL "
+        "GROUP BY i.defect_type ORDER BY reviewed_count DESC",
+        (g.user_id,),
+    )
 
     total = int(summary["total_inspected"] or 0)
     defects = int(summary["defects_found"] or 0)
     defect_rate = (defects / total * 100) if total else 0
+    reviewed_count = int(agreement_summary["reviewed_count"] or 0)
+    agreement_count = int(agreement_summary["agreement_count"] or 0)
+    for row in agreement_by_type:
+        row["reviewed_count"] = int(row["reviewed_count"] or 0)
+        row["agreement_count"] = int(row["agreement_count"] or 0)
+        row["agreement_rate"] = round(
+            row["agreement_count"] / row["reviewed_count"] * 100,
+            2,
+        ) if row["reviewed_count"] else 0
     for row in recent:
         row["confidence"] = float(row["confidence"] or 0)
 
     if latest is None:
         current_status = "NORMAL"
-    elif float(latest["confidence"] or 0) < 0.30:
+    elif latest["disposition"] == "QUARANTINE":
         current_status = "REJECT"
-    elif float(latest["confidence"] or 0) <= 0.55:
+    elif latest["disposition"] == "HOLD":
         current_status = "HOLD"
     else:
         current_status = "NORMAL"
@@ -231,4 +282,10 @@ def dashboard():
         "liveItems": recent,
         "defectFrequency": frequencies,
         "currentStatus": current_status,
+        "reviewAgreement": {
+            "reviewedInspections": reviewed_count,
+            "agreements": agreement_count,
+            "agreementRate": round(agreement_count / reviewed_count * 100, 2) if reviewed_count else 0,
+            "byDefectType": agreement_by_type,
+        },
     })

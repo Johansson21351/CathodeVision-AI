@@ -6,6 +6,8 @@
 # and `inspections.lot_id`). Until then these return a friendly "not set up"
 # message instead of raising, so the agent can keep going without a lot_id.
 
+from flask import g
+
 from db import query
 
 TOOL_SCHEMAS = [
@@ -48,11 +50,16 @@ TOOL_SCHEMAS = [
 
 
 def get_lot_history(lot_id: str) -> dict:
+    user_id = getattr(g, "user_id", None)
+    if user_id is None:
+        return {"lot_id": lot_id, "note": "authenticated user context unavailable", "items": []}
+
     rows = query(
         "SELECT defect_type, severity, detected_chemistry, created_at "
-        "FROM inspections WHERE lot_id = %s AND analysis_status = 'COMPLETED' "
+        "FROM inspections WHERE user_id = %s AND lot_id = %s "
+        "AND analysis_status = 'COMPLETED' "
         "ORDER BY created_at DESC LIMIT 20",
-        (lot_id,),
+        (user_id, lot_id),
     )
     if rows is None:
         return {"lot_id": lot_id, "note": "lot_id column not set up yet — see schema_additions.sql", "items": []}

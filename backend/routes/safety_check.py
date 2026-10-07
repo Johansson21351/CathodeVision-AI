@@ -9,6 +9,7 @@ from collections import defaultdict, deque
 from flask import Blueprint, request, jsonify
 
 from ai import analyze_image, AIUnavailable
+from severity_policy import decide_disposition
 
 bp = Blueprint("safety_check", __name__)
 
@@ -42,32 +43,44 @@ def _to_verdict(result: dict) -> dict:
             "color": "gray",
         }
 
-    severity = result.get("severity", "none")
-    if severity == "critical":
+    # Public safety check has no lot/spec context. Keep policy evaluation
+    # local and deterministic; this endpoint must not call the agent/tools.
+    policy = decide_disposition(
+        result.get("defects", []),
+        result.get("image_quality", "ok"),
+        {},
+    )
+    disposition = policy["disposition"]
+
+    if disposition == "QUARANTINE":
         return {
             "verdict": "STOP_USING",
+            "disposition": disposition,
             "headline": "Stop using this battery immediately",
             "advice": "Signs of swelling, leakage, burning, or cracking are fire/safety risks. "
                       "Isolate it away from flammable material and take it to a battery recycling point.",
             "color": "red",
         }
-    if severity == "major":
+    if disposition == "HOLD":
         return {
             "verdict": "GET_IT_CHECKED",
+            "disposition": disposition,
             "headline": "Get this battery checked soon",
             "advice": "Damage was found that can worsen over time. Stop regular use until a professional "
                       "inspects it, and avoid charging it unattended.",
             "color": "orange",
         }
-    if severity == "minor":
+    if disposition == "MONITOR":
         return {
             "verdict": "MONITOR",
+            "disposition": disposition,
             "headline": "Minor wear found — keep an eye on it",
             "advice": "Not an immediate danger, but check it periodically for swelling or new damage.",
             "color": "yellow",
         }
     return {
         "verdict": "LOOKS_FINE",
+        "disposition": disposition,
         "headline": "No visible damage found",
         "advice": "No defects detected in this photo. This isn't a guarantee of internal health — "
                    "still retire any battery that feels hot, swells, or ages past its rated cycle life.",
@@ -99,7 +112,6 @@ def safety_check():
     verdict = _to_verdict(result)
     return jsonify({
         **verdict,
-        "defect_type": result.get("defect_type"),
-        "description": result.get("description"),
-        "confidence": result.get("confidence"),
+        "defects": result.get("defects", []),
+        "image_quality": result.get("image_quality", "ok"),
     })

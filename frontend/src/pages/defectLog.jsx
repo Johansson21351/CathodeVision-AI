@@ -145,7 +145,7 @@ function DefectLog() {
                 <div className="small">corrected to: {r.corrected_type}</div>
               )}
             </div>
-            <div className="col actions">{r.description ? r.description.slice(0, 60) + (r.description.length > 60 ? '…' : '') : '-'}</div>
+            <div className="col actions">{r.description || '-'}</div>
           </div>
         ))}
         {!loading && filtered.length === 0 && <div className="table-row">No inspection records found</div>}

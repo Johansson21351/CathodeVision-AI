@@ -3,9 +3,12 @@ import { apiFetch, getToken } from './client'
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 
-export async function inspectImage(file) {
+export async function inspectImage(photos, lotId = '') {
   const formData = new FormData()
-  formData.append('file', file)
+  for (const role of ['top', 'terminal_side', 'label_closeup']) {
+    formData.append(role, photos[role])
+  }
+  if (lotId.trim()) formData.append('lot_id', lotId.trim())
   return apiFetch('/inspect', { method: 'POST', body: formData, isFormData: true })
 }
 
@@ -26,9 +29,11 @@ export function getModelConfig() {
 
 // <img>/<a> tags can't send an Authorization header, so the image route also
 // accepts the token as a query param (see backend/auth.py token_required).
-export function getInspectionImageUrl(id) {
+export function getInspectionImageUrl(id, role = '') {
   const token = getToken()
-  return `${BASE_URL}/inspections/${id}/image?token=${encodeURIComponent(token || '')}`
+  const params = new URLSearchParams({ token: token || '' })
+  if (role) params.set('role', role)
+  return `${BASE_URL}/inspections/${id}/image?${params.toString()}`
 }
 
 export function getDashboard() {

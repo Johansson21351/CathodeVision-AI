@@ -203,6 +203,15 @@
   padding-bottom: 16px;
 }
 
+.recent-inspections-empty {
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--muted);
+  text-align: center;
+}
+
 .data-table {
   padding: 8px 20px 16px;
   overflow-x: auto;
@@ -270,6 +279,80 @@
   padding: 18px;
   background: rgba(59, 130, 246, 0.06);
   cursor: pointer;
+}
+
+.capture-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.capture-slot {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text);
+}
+
+.capture-slot > small {
+  min-height: 2.4em;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.capture-drop {
+  min-height: 190px;
+  padding: 10px;
+  font-size: 0.85rem;
+}
+
+.capture-drop input[type='file'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.capture-drop:focus-within {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+.capture-drop .upload-preview {
+  height: 170px;
+}
+
+.lot-id-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.lot-id-field input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.capture-submit {
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 16px;
+  background: var(--accent-strong);
+  color: #07120b;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.capture-submit:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 .upload-preview {
@@ -356,6 +439,53 @@
   letter-spacing: 0.08em;
 }
 
+.agreement-summary {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 4px 4px 8px;
+}
+
+.agreement-summary strong {
+  color: var(--accent-strong);
+  font-size: 2.2rem;
+}
+
+.agreement-summary span,
+.agreement-breakdown p {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.agreement-breakdown {
+  display: grid;
+  gap: 12px;
+}
+
+.agreement-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) 2fr auto;
+  gap: 12px;
+  align-items: center;
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.agreement-meter {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+}
+
+.agreement-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #22c55e, #60a5fa);
+}
+
 .chart-body {
   display: grid;
   gap: 16px;
@@ -435,6 +565,14 @@
   .dashboard-main-grid,
   .dashboard-bottom-row {
     grid-template-columns: 1fr;
+  }
+
+  .capture-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .capture-slot > small {
+    min-height: 0;
   }
 }
 

@@ -4,6 +4,12 @@ import Card from '../components/cards'
 import { useEffect, useRef, useState } from 'react'
 import { getDashboard, inspectImage } from '../api/inspect'
 
+const CAPTURE_SLOTS = [
+  { role: 'top', title: '1. Top view', hint: 'Full cell or pack from above' },
+  { role: 'terminal_side', title: '2. Terminal / side', hint: 'Show terminals and casing sides' },
+  { role: 'label_closeup', title: '3. Label close-up', hint: 'Keep model and label text in focus' },
+]
+
 function HomePage() {
   const [stats, setStats] = useState({
     totalInspected: 0,
@@ -16,44 +22,77 @@ function HomePage() {
     liveItems: [],
     defectFrequency: [],
     currentStatus: 'NORMAL',
+    reviewAgreement: {
+      reviewedInspections: 0,
+      agreements: 0,
+      agreementRate: 0,
+      byDefectType: [],
+    },
   })
 
   const [inspecting, setInspecting] = useState(false)
   const [inspectResult, setInspectResult] = useState(null)
   const [inspectError, setInspectError] = useState('')
-  const [previewUrl, setPreviewUrl] = useState('')
-  const fileInputRef = useRef(null)
+  const [dashboardError, setDashboardError] = useState('')
+  const [photos, setPhotos] = useState({ top: null, terminal_side: null, label_closeup: null })
+  const [lotId, setLotId] = useState('')
+  const previewUrlsRef = useRef({})
 
   useEffect(() => {
-    getDashboard().then(setStats).catch(() => {})
+    const refreshDashboard = () => getDashboard()
+      .then(data => {
+        setStats(data)
+        setDashboardError('')
+      })
+      .catch(error => setDashboardError(error.message || 'Unable to load inspection history'))
+
+    refreshDashboard()
     // Live counters: poll instead of only refreshing after an upload.
-    const poll = setInterval(() => {
-      getDashboard().then(setStats).catch(() => {})
-    }, 5000)
+    const poll = setInterval(refreshDashboard, 5000)
     return () => clearInterval(poll)
   }, [])
 
-  useEffect(() => {
-    return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl)
-    }
-  }, [previewUrl])
+  useEffect(() => () => {
+    Object.values(previewUrlsRef.current).forEach(url => URL.revokeObjectURL(url))
+  }, [])
 
-  const handleFileSelected = async (file) => {
+  const handlePhotoSelected = (role, file) => {
     if (!file) return
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
       setInspectError('รองรับเฉพาะ JPG, PNG และ WebP')
       return
     }
-    if (previewUrl) URL.revokeObjectURL(previewUrl)
-    setPreviewUrl(URL.createObjectURL(file))
+    if (file.size > 5 * 1024 * 1024) {
+      setInspectError('แต่ละภาพต้องมีขนาดไม่เกิน 5 MB')
+      return
+    }
+    if (previewUrlsRef.current[role]) URL.revokeObjectURL(previewUrlsRef.current[role])
+    const url = URL.createObjectURL(file)
+    previewUrlsRef.current[role] = url
+    setPhotos(previous => ({ ...previous, [role]: { file, url } }))
     setInspectError('')
     setInspectResult(null)
+  }
+
+  const submitInspection = async () => {
+    const missing = CAPTURE_SLOTS.find(slot => !photos[slot.role])
+    if (missing) {
+      setInspectError(`Add the required photo: ${missing.title}`)
+      return
+    }
     setInspecting(true)
+    setInspectError('')
+    setInspectResult(null)
     try {
-      const result = await inspectImage(file)
+      const files = Object.fromEntries(CAPTURE_SLOTS.map(slot => [slot.role, photos[slot.role].file]))
+      const result = await inspectImage(files, lotId)
       setInspectResult(result)
-      getDashboard().then(setStats).catch(() => {})
+      getDashboard()
+        .then(data => {
+          setStats(data)
+          setDashboardError('')
+        })
+        .catch(error => setDashboardError(error.message || 'Unable to load inspection history'))
     } catch (e) {
       setInspectError(e.message)
     } finally {
@@ -84,43 +123,72 @@ function HomePage() {
       <div className="dashboard-main-grid">
         <section className="upload-card card">
           <div className="card-title">
-            <strong>UPLOAD IMAGE</strong>
+            <strong>GUIDED 3-SHOT CAPTURE</strong>
           </div>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            style={{ display: 'none' }}
-            onChange={e => handleFileSelected(e.target.files[0])}
-          />
-
-          <div
-            className="upload-drop"
-            onClick={() => fileInputRef.current?.click()}
-            onDragOver={e => e.preventDefault()}
-            onDrop={e => {
-              e.preventDefault()
-              handleFileSelected(e.dataTransfer.files[0])
-            }}
-          >
-            {previewUrl ? (
-              <img className="upload-preview" src={previewUrl} alt="Selected inspection" />
-            ) : (
-              <>
-                <span>{inspecting ? 'กำลังตรวจสอบ...' : 'Drag & Drop Image'}</span>
-                <small>or click to browse</small>
-              </>
-            )}
+          <div className="capture-grid">
+            {CAPTURE_SLOTS.map(slot => (
+              <div className="capture-slot" key={slot.role}>
+                <strong>{slot.title}</strong>
+                <small>{slot.hint}</small>
+                <label
+                  className="upload-drop capture-drop"
+                  onDragOver={event => event.preventDefault()}
+                  onDrop={event => {
+                    event.preventDefault()
+                    handlePhotoSelected(slot.role, event.dataTransfer.files[0])
+                  }}
+                >
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    disabled={inspecting}
+                    onChange={event => {
+                      handlePhotoSelected(slot.role, event.target.files[0])
+                      event.target.value = ''
+                    }}
+                  />
+                  {photos[slot.role] ? (
+                    <img className="upload-preview" src={photos[slot.role].url} alt={`${slot.title} preview`} />
+                  ) : (
+                    <span>{inspecting ? 'Analyzing...' : 'Drop photo here or click to browse'}</span>
+                  )}
+                </label>
+              </div>
+            ))}
           </div>
-          <div className="upload-hints">{inspecting ? 'AIกำลังวิเคราะห์ภาพ...' : 'PNG · JPG · WebP · up to 5MB'}</div>
+          <label className="lot-id-field">
+            Optional lot ID
+            <input
+              value={lotId}
+              onChange={event => setLotId(event.target.value)}
+              maxLength={50}
+              placeholder="e.g. DEMO-NMC-21700-001"
+              disabled={inspecting}
+            />
+          </label>
+          <div className="upload-hints">
+            {inspecting ? 'AIกำลังวิเคราะห์ภาพทั้งสามมุม...' : 'JPG · PNG · WebP · up to 5MB per photo'}
+          </div>
+          <button className="capture-submit" type="button" onClick={submitInspection} disabled={inspecting}>
+            {inspecting ? 'ANALYZING THREE PHOTOS...' : 'INSPECT THESE THREE PHOTOS'}
+          </button>
 
           {inspectError && <div className="error">{inspectError}</div>}
 
           {inspectResult && (
             <div className="inspect-result">
-              <strong>{inspectResult.has_defect ? '⚠️ พบตำหนิ' : '✓ ไม่พบตำหนิ'}</strong>
-              <div>ชนิด: {inspectResult.defect_type}</div>
+              <strong>{inspectResult.defects?.length ? '⚠️ พบตำหนิ' : '✓ ไม่พบตำหนิ'}</strong>
+              <div>Disposition: {inspectResult.disposition}</div>
+              <div>
+                {inspectResult.defects?.length
+                  ? inspectResult.defects.map((defect, index) => (
+                    <div key={`${defect.type}-${defect.location}-${index}`}>
+                      {defect.type} · {defect.location} · {(defect.visible_confidence * 100).toFixed(0)}%
+                    </div>
+                  ))
+                  : 'ไม่พบตำหนิที่มองเห็น'}
+              </div>
               <div>{inspectResult.description}</div>
               <div>ความมั่นใจ: {(inspectResult.confidence * 100).toFixed(0)}%</div>
 
@@ -139,37 +207,37 @@ function HomePage() {
           <section className="live-panel card">
             <div className="panel-header">
               <strong>RECENT INSPECTIONS</strong>
-              <span className="meta">{stats.liveDetections} detections</span>
+              {stats.liveItems.length > 0 && <span className="meta">{stats.liveDetections} detections</span>}
             </div>
-
-            <div className="data-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Type</th>
-                    <th>Severity</th>
-                    <th>Conf</th>
-                    <th>Inspected At</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stats.liveItems.length > 0 ? (
-                    stats.liveItems.map((item, index) => (
+            {dashboardError && <div className="error">Recent inspections could not be refreshed: {dashboardError}</div>}
+            {stats.liveItems.length > 0 ? (
+              <div className="data-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Type</th>
+                      <th>Severity</th>
+                      <th>Conf</th>
+                      <th>Inspected At</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stats.liveItems.map(item => (
                       <tr key={item.id}>
-                        <td>{stats.liveItems.length - index}</td>
+                        <td>{item.id}</td>
                         <td>{item.type || 'No defect'}</td>
-                        <td className={`status ${item.severity.toLowerCase()}`}>{item.severity}</td>
-                        <td>{(item.confidence * 100).toFixed(0)}%</td>
+                        <td className={`status ${(item.severity || 'none').toLowerCase()}`}>{item.severity || 'none'}</td>
+                        <td>{((item.confidence || 0) * 100).toFixed(0)}%</td>
                         <td>{new Date(item.created_at).toLocaleString()}</td>
                       </tr>
-                    ))
-                  ) : (
-                    <tr><td colSpan="5">No inspections stored yet</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="recent-inspections-empty">No recent batteries inspected</div>
+            )}
           </section>
 
           <div className="breakdown-card card">
@@ -222,10 +290,22 @@ function HomePage() {
 
         <section className="chart-card card">
           <div className="card-title">
-            <strong>YIELD RATE TREND</strong>
+            <strong>AI VS. REVIEWER AGREEMENT</strong>
           </div>
-          <div className="trend-chart">
-            <p>Yield trend is available after multiple inspections.</p>
+          <div className="agreement-summary">
+            <strong>{stats.reviewAgreement?.agreementRate || 0}%</strong>
+            <span>
+              {stats.reviewAgreement?.agreements || 0} of {stats.reviewAgreement?.reviewedInspections || 0} reviewed inspections agree
+            </span>
+          </div>
+          <div className="agreement-breakdown">
+            {stats.reviewAgreement?.byDefectType?.length ? stats.reviewAgreement.byDefectType.map(item => (
+              <div className="agreement-row" key={item.defect_type}>
+                <span>{item.defect_type}</span>
+                <div className="agreement-meter"><i style={{ width: `${item.agreement_rate}%` }} /></div>
+                <strong>{item.agreement_rate}%</strong>
+              </div>
+            )) : <p>No reviewed inspections yet</p>}
           </div>
         </section>
       </div>

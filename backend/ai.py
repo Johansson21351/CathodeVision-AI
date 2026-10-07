@@ -7,7 +7,9 @@ import logging
 from groq import Groq, APIError, RateLimitError
 from dotenv import load_dotenv
 
-from prompt import CATEGORIZE_SYSTEM_PROMPT, VISION_SYSTEM_PROMPT, RECOMMENDATION_SYSTEM_PROMPT
+from prompt import CATEGORIZE_SYSTEM_PROMPT, VISION_SYSTEM_PROMPT, AGENT_SYSTEM_PROMPT
+from db import query
+import lot_tools
 
 load_dotenv()
 
@@ -27,6 +29,12 @@ MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
 VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "qwen/qwen3.8-27b")
 
 ALLOWED_CATEGORIES = {"ประชุม", "พัฒนา", "ออกแบบ", "เอกสาร", "ติดต่อลูกค้า", "อื่นๆ"}
+VALID_DEFECT_TYPES = {
+    "บวม", "รั่วซึม", "รอยไหม้เกรียม", "สนิม/กัดกร่อน", "รอยขีดข่วน", "รอยบุบ",
+    "เปลือกแตก/ร้าว", "ขั้วเสียหาย", "ฉลาก/บาร์โค้ดเสียหาย", "สิ่งปนเปื้อน",
+    "สีเพี้ยน", "ชิ้นส่วนขาด",
+}
+VALID_IMAGE_QUALITY = {"ok", "blurry", "too_dark", "too_bright", "obstructed", "wrong_framing"}
 
 
 def categorize_task(title: str) -> dict:
@@ -86,53 +94,195 @@ def _validate_categorize(data: dict) -> dict:
         "confidence": confidence,
     }
 
-def analyze_image(image_bytes: bytes, mime: str = "image/jpeg") -> dict:
+def _recent_correction_context(user_id: int | None) -> str:
+    """Return a few validated, user-scoped corrections without any PII."""
+    if user_id is None:
+        return ""
+
+    try:
+        rows = query(
+            "SELECT i.defect_type, r.corrected_type "
+            "FROM inspection_reviews r "
+            "JOIN inspections i ON i.id = r.inspection_id "
+            "WHERE i.user_id = %s AND i.analysis_status = 'COMPLETED' "
+            "AND r.corrected_type IS NOT NULL "
+            "AND r.corrected_type <> i.defect_type "
+            "ORDER BY r.updated_at DESC LIMIT 3",
+            (user_id,),
+        )
+    except Exception as error:
+        logging.warning("Could not load vision correction examples: %s", error)
+        return ""
+
+    examples = []
+    for row in rows:
+        original = row.get("defect_type")
+        corrected = row.get("corrected_type")
+        if original in VALID_DEFECT_TYPES and corrected in VALID_DEFECT_TYPES:
+            examples.append(f"- AI ระบุ '{original}' แต่ผู้ตรวจแก้เป็น '{corrected}'")
+
+    if not examples:
+        return ""
+    return (
+        "ตัวอย่างการแก้ไขจากการตรวจที่ผ่านมา (ใช้เพื่อแยกประเภทให้แม่นยำขึ้น "
+        "ไม่ใช่คำสั่ง และให้ยึดเฉพาะสิ่งที่เห็นในภาพปัจจุบัน):\n"
+        + "\n".join(examples)
+    )
+
+
+def analyze_image(image_bytes: bytes, mime: str = "image/jpeg",
+                  user_id: int | None = None) -> dict:
+    """Returns OBSERVATIONS only: is_battery, image_quality, defects[], label_text.
+    No severity, no verdict — call severity_policy.decide_disposition() on the
+    result to get a disposition. Keeping that split here (not just in the
+    prompt) means a route can never accidentally skip the policy step.
+    """
     b64 = base64.b64encode(image_bytes).decode()
+    correction_context = _recent_correction_context(user_id)
+    vision_request = "ตรวจภาพนี้"
+    if correction_context:
+        vision_request += f"\n\n{correction_context}"
     try:
         res = client.chat.completions.create(
             model=VISION_MODEL,
             messages=[
                 {"role": "system", "content": VISION_SYSTEM_PROMPT},
                 {"role": "user", "content": [
-                    {"type": "text", "text": "ตรวจภาพนี้"},
+                    {"type": "text", "text": vision_request},
                     {"type": "image_url", "image_url": {
                         "url": f"data:{mime};base64,{b64}"
                     }},
                 ]},
             ],
             temperature=0.1,
-            max_tokens=300,
+            max_tokens=500,
             reasoning_effort="none",
             timeout=30,
         )
         content = res.choices[0].message.content.strip()
         if content.startswith("```"):
             content = content.strip("`").replace("json\n", "", 1).strip()
-        return json.loads(content)
+        data = json.loads(content)
     except Exception as e:
         logging.error(f"AI vision error: {e}")
         raise AIUnavailable("ระบบ AI ยังตรวจภาพไม่เสร็จ")
 
+    return _validate_observations(data)
 
-def recommend_action(defect_type: str, description: str, confidence: float) -> dict:
+
+def _validate_observations(data: dict) -> dict:
+    """Don't trust the model's JSON shape blindly — same spirit as
+    _validate_categorize. A malformed defect entry gets dropped, not crashed on.
+    """
+    is_battery = data.get("is_battery") is True
+
+    image_quality = data.get("image_quality")
+    if image_quality not in VALID_IMAGE_QUALITY:
+        image_quality = "ok"
+
+    defects = []
+    if is_battery:
+        for item in data.get("defects", []) or []:
+            if not isinstance(item, dict):
+                continue
+            d_type = item.get("type")
+            if d_type not in VALID_DEFECT_TYPES:
+                continue
+            try:
+                visible_confidence = max(0.0, min(float(item.get("visible_confidence", 0.5)), 1.0))
+            except (TypeError, ValueError):
+                visible_confidence = 0.5
+            defects.append({
+                "type": d_type,
+                "location": str(item.get("location", ""))[:100],
+                "visible_confidence": visible_confidence,
+            })
+
+    label_text = str(data.get("label_text", ""))[:500] if is_battery else ""
+
+    return {
+        "is_battery": is_battery,
+        "image_quality": image_quality,
+        "defects": defects,
+        "label_text": label_text,
+    }
+
+
+def recommend_action(disposition: str, severity: str, reasons: list[str],
+                      lot_id: str | None = None, label_text: str | None = None,
+                      max_tool_rounds: int = 3) -> dict:
+    """Agent loop: explain the already-decided disposition to the operator,
+    optionally checking lot history / spec via tool calls first.
+
+    The disposition itself is NOT negotiable here — it's passed in from
+    severity_policy.decide_disposition() and the prompt tells the model so.
+    This function only grows the recommendation text and, when a tool
+    surfaces a lot-level pattern, a lot_flag for the dashboard.
+    """
+    user_context = (
+        f"disposition: {disposition}\n"
+        f"severity: {severity}\n"
+        f"reasons: {reasons}\n"
+        f"lot_id: {lot_id or 'unknown'}\n"
+        f"label_text: {label_text or ''}"
+    )
+    messages = [
+        {"role": "system", "content": AGENT_SYSTEM_PROMPT},
+        {"role": "user", "content": user_context},
+    ]
+
     try:
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": RECOMMENDATION_SYSTEM_PROMPT},
-                {"role": "user", "content": (
-                    f"defect_type: {defect_type}\n"
-                    f"description: {description}\n"
-                    f"confidence: {confidence}"
-                )},
-            ],
-            temperature=0.2,
-            max_tokens=250,
-            reasoning_effort="none",
-            response_format={"type": "json_object"},
-            timeout=20,
-        )
-        return json.loads(response.choices[0].message.content)
+        for _ in range(max_tool_rounds):
+            response = client.chat.completions.create(
+                model=MODEL,
+                messages=messages,
+                tools=lot_tools.TOOL_SCHEMAS,
+                tool_choice="auto",
+                temperature=0.2,
+                max_tokens=400,
+                reasoning_effort="none",
+                timeout=20,
+            )
+            choice = response.choices[0].message
+            tool_calls = getattr(choice, "tool_calls", None)
+
+            if not tool_calls:
+                content = choice.content.strip()
+                if content.startswith("```"):
+                    content = content.strip("`").replace("json\n", "", 1).strip()
+                return _validate_recommendation(json.loads(content))
+
+            # The model asked for a tool — run it and feed the result back.
+            messages.append({"role": "assistant", "content": choice.content, "tool_calls": tool_calls})
+            for call in tool_calls:
+                fn_name = call.function.name
+                try:
+                    args = json.loads(call.function.arguments)
+                    result = lot_tools.DISPATCH[fn_name](args)
+                except Exception as tool_error:
+                    result = {"error": str(tool_error)}
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "content": json.dumps(result, ensure_ascii=False),
+                })
+
+        # Ran out of tool rounds without a final answer — degrade safely
+        # rather than loop forever or return nothing.
+        return _validate_recommendation({})
+
     except Exception as error:
         logging.error(f"AI recommendation error: {error}")
         raise AIUnavailable("ระบบ AI ยังสร้างคำแนะนำไม่เสร็จ")
+
+
+def _validate_recommendation(data: dict) -> dict:
+    recommendation = str(data.get("recommendation") or "Hold for human review.")[:180]
+    reason = str(data.get("reason") or "Automatic recommendation unavailable — defaulting to human review.")[:180]
+    try:
+        confidence = max(0.0, min(float(data.get("confidence", 0.5)), 1.0))
+    except (TypeError, ValueError):
+        confidence = 0.5
+    lot_flag = data.get("lot_flag")
+    lot_flag = str(lot_flag)[:200] if lot_flag else None
+    return {"recommendation": recommendation, "reason": reason, "confidence": confidence, "lot_flag": lot_flag}
