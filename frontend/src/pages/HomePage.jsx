@@ -10,6 +10,23 @@ const CAPTURE_SLOTS = [
   { role: 'label_closeup', title: '3. Label close-up', hint: 'Keep model and label text in focus' },
 ]
 
+const DEMO_CAPTURE_IMAGES = [
+  { role: 'top', path: '/Screenshot%202026-10-12%20163022.png', filename: 'healthy-top.png' },
+  { role: 'terminal_side', path: '/Screenshot%202026-10-12%20163038.png', filename: 'healthy-terminal-side.png' },
+  { role: 'label_closeup', path: '/Screenshot%202026-10-12%20163049.png', filename: 'healthy-label-closeup.png' },
+]
+
+const IMAGE_MIME_BY_EXTENSION = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' }
+
+const getImageMime = async blob => {
+  const bytes = new Uint8Array(await blob.slice(0, 8).arrayBuffer())
+  const isPng = bytes.length >= 8 && [137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => bytes[index] === byte)
+  const isJpeg = bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+  if (isPng) return 'image/png'
+  if (isJpeg) return 'image/jpeg'
+  return null
+}
+
 function HomePage() {
   const [stats, setStats] = useState({
     totalInspected: 0,
@@ -58,8 +75,14 @@ function HomePage() {
 
   const handlePhotoSelected = (role, file) => {
     if (!file) return
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-      setInspectError('รองรับเฉพาะ JPG, PNG และ WebP')
+    const extension = file.name.split('.').pop()?.toLowerCase()
+    const inferredMime = IMAGE_MIME_BY_EXTENSION[extension]
+    const mimeType = file.type === 'image/jpg' ? 'image/jpeg' : file.type
+    const normalizedMime = ['image/jpeg', 'image/png'].includes(mimeType)
+      ? mimeType
+      : ['', 'application/octet-stream', 'image/jpg'].includes(file.type) ? inferredMime : null
+    if (!normalizedMime) {
+      setInspectError('Please choose a JPG or PNG image.')
       return
     }
     if (file.size > 5 * 1024 * 1024) {
@@ -67,11 +90,44 @@ function HomePage() {
       return
     }
     if (previewUrlsRef.current[role]) URL.revokeObjectURL(previewUrlsRef.current[role])
-    const url = URL.createObjectURL(file)
+    const normalizedFile = file.type === normalizedMime
+      ? file
+      : new File([file], file.name, { type: normalizedMime })
+    const url = URL.createObjectURL(normalizedFile)
     previewUrlsRef.current[role] = url
-    setPhotos(previous => ({ ...previous, [role]: { file, url } }))
+    setPhotos(previous => ({ ...previous, [role]: { file: normalizedFile, url } }))
     setInspectError('')
     setInspectResult(null)
+  }
+
+  const loadDemoImages = async () => {
+    setInspectError('')
+    setInspectResult(null)
+    try {
+      const demoPhotos = await Promise.all(DEMO_CAPTURE_IMAGES.map(async image => {
+        const response = await fetch(image.path)
+        if (!response.ok) throw new Error('Demo photo file not found')
+        const blob = await response.blob()
+        const mimeType = await getImageMime(blob)
+        if (!mimeType || blob.size > 5 * 1024 * 1024) throw new Error('Invalid demo photo')
+        const filename = image.filename.replace(/\.png$/i, mimeType === 'image/jpeg' ? '.jpg' : '.png')
+        return { role: image.role, file: new File([blob], filename, { type: mimeType }) }
+      }))
+
+      demoPhotos.forEach(({ role, file }) => handlePhotoSelected(role, file))
+    } catch {
+      setPhotos(previous => {
+        const next = { ...previous }
+        DEMO_CAPTURE_IMAGES.forEach(image => {
+          if (next[image.role]?.file.name === image.filename) {
+            URL.revokeObjectURL(next[image.role].url)
+            delete next[image.role]
+          }
+        })
+        return next
+      })
+      setInspectError('Could not load the demo photos. Make sure the three PNG files in frontend/public are available.')
+    }
   }
 
   const submitInspection = async () => {
@@ -126,6 +182,10 @@ function HomePage() {
             <strong>GUIDED 3-SHOT CAPTURE</strong>
           </div>
 
+          <button className="demo-images-button" type="button" onClick={loadDemoImages} disabled={inspecting}>
+            Demo images for testing
+          </button>
+
           <div className="capture-grid">
             {CAPTURE_SLOTS.map(slot => (
               <div className="capture-slot" key={slot.role}>
@@ -141,7 +201,7 @@ function HomePage() {
                 >
                   <input
                     type="file"
-                    accept="image/jpeg,image/png,image/webp"
+                    accept=".jpg,.jpeg,.png,image/jpeg,image/png"
                     disabled={inspecting}
                     onChange={event => {
                       handlePhotoSelected(slot.role, event.target.files[0])
@@ -168,7 +228,7 @@ function HomePage() {
             />
           </label>
           <div className="upload-hints">
-            {inspecting ? 'AIกำลังวิเคราะห์ภาพทั้งสามมุม...' : 'JPG · PNG · WebP · up to 5MB per photo'}
+            {inspecting ? 'AIกำลังวิเคราะห์ภาพทั้งสามมุม...' : 'JPG · PNG · up to 5MB per photo'}
           </div>
           <button className="capture-submit" type="button" onClick={submitInspection} disabled={inspecting}>
             {inspecting ? 'ANALYZING THREE PHOTOS...' : 'INSPECT THESE THREE PHOTOS'}
