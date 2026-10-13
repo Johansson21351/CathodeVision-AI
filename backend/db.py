@@ -11,12 +11,22 @@ load_dotenv()
 def get_db():
     """ คืน connection ของ request นี้ - ถ้ายังไม่มีค่อยเปิดใหม่"""
     if "db" not in g:
-        g.db = mysql.connector.connect(
+        config = dict(
             host=os.getenv("DB_HOST"),
+            port=int(os.getenv("DB_PORT", "3306")),
             user=os.getenv("DB_USER"),
             password=os.getenv("DB_PASSWORD"),
             database=os.getenv("DB_NAME"),
         )
+        # Hosted MySQL (TiDB Cloud, Aiven, ...) requires TLS. DB_SSL_CA is the CA
+        # file path; on Render use DB_SSL=true to verify against the system CAs.
+        ssl_ca = os.getenv("DB_SSL_CA")
+        if ssl_ca:
+            config["ssl_ca"] = ssl_ca
+        elif os.getenv("DB_SSL", "").lower() in ("1", "true", "yes"):
+            import certifi
+            config["ssl_ca"] = certifi.where()
+        g.db = mysql.connector.connect(**config)
     return g.db
 
 

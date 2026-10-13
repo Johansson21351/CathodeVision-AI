@@ -1,7 +1,4 @@
 # backend/routes/inspect.py — อัปโหลดรูป ให้ AI (vision) ตรวจตำหนิ
-import os
-import uuid
-
 from flask import Blueprint, request, jsonify, g
 
 from db import execute, execute_many, query
@@ -13,7 +10,6 @@ from severity_policy import SEVERITY_ORDER, decide_disposition, defect_severity
 bp = Blueprint("inspect", __name__)
 
 ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp"}
-MIME_EXT = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 MAX_BYTES = 5 * 1024 * 1024  # 5 MB
 CAPTURE_ROLES = ("top", "terminal_side", "label_closeup")
 QUALITY_PRIORITY = {
@@ -24,19 +20,6 @@ QUALITY_PRIORITY = {
     "obstructed": 1,
     "wrong_framing": 1,
 }
-
-UPLOAD_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
-
-
-def _save_image(image: bytes, mime: str, user_id: int) -> str:
-    """Saves to disk, returns a path relative to UPLOAD_ROOT (what we store in the DB)."""
-    user_dir = os.path.join(UPLOAD_ROOT, str(user_id))
-    os.makedirs(user_dir, exist_ok=True)
-    rel_path = os.path.join(str(user_id), f"{uuid.uuid4().hex}{MIME_EXT[mime]}")
-    with open(os.path.join(UPLOAD_ROOT, rel_path), "wb") as f:
-        f.write(image)
-    return rel_path.replace("\\", "/")
-
 
 @bp.post("/inspect")
 @token_required
@@ -69,21 +52,16 @@ def inspect_image():
     if total_bytes > len(CAPTURE_ROLES) * MAX_BYTES:
         return jsonify({"error": "Combined photos are larger than 15MB"}), 413
 
-    image_paths = {
-        role: _save_image(capture["image"], capture["file"].mimetype, g.user_id)
-        for role, capture in captures.items()
-    }
-
     upload_id, _ = execute(
         "INSERT INTO inspections (filename, user_id, lot_id, analysis_status, image_path) "
         "VALUES (%s, %s, %s, 'PENDING', %s)",
-        (captures["top"]["file"].filename, g.user_id, lot_id, image_paths["top"]),
+        (captures["top"]["file"].filename, g.user_id, lot_id, "db:top"),
     )
     execute_many([
         (
-            "INSERT INTO inspection_images (inspection_id, role, image_path) "
-            "VALUES (%s, %s, %s)",
-            (upload_id, role, image_paths[role]),
+            "INSERT INTO inspection_images (inspection_id, role, image_path, image_data, image_mime) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (upload_id, role, f"db:{role}", captures[role]["image"], captures[role]["file"].mimetype),
         )
         for role in CAPTURE_ROLES
     ])

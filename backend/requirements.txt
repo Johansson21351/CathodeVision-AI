@@ -5,3 +5,5 @@ groq
 mysql-connector-python
 PyJWT
 Werkzeug
+gunicorn
+certifi

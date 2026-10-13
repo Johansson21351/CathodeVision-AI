@@ -12,3 +12,7 @@ frontend/.env
 
 # User-uploaded inspection photos
 backend/uploads/
+
+# Logs / local tooling
+*.log
+.claude/

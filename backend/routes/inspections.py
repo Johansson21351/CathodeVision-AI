@@ -1,6 +1,4 @@
-import os
-
-from flask import Blueprint, jsonify, g, request, send_from_directory
+from flask import Blueprint, Response, jsonify, g, request
 
 from auth import token_required
 from db import execute, query
@@ -9,8 +7,6 @@ import ai as ai_module
 from prompt import DEFECT_TYPES
 
 bp = Blueprint("inspections", __name__)
-
-UPLOAD_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
 
 
 @bp.get("/inspections/defect-types")
@@ -73,27 +69,20 @@ def list_inspections():
 @bp.get("/inspections/<int:inspection_id>/image")
 @token_required
 def get_inspection_image(inspection_id):
-    role = request.args.get("role", "").strip()
-    if role and role not in {"top", "terminal_side", "label_closeup"}:
+    role = request.args.get("role", "").strip() or "top"
+    if role not in {"top", "terminal_side", "label_closeup"}:
         return jsonify({"error": "Invalid image role"}), 400
 
-    if role:
-        inspection = query(
-            "SELECT ii.image_path FROM inspection_images ii "
-            "JOIN inspections i ON i.id = ii.inspection_id "
-            "WHERE i.id = %s AND i.user_id = %s AND ii.role = %s",
-            (inspection_id, g.user_id, role), one=True,
-        )
-    else:
-        inspection = query(
-            "SELECT image_path FROM inspections WHERE id = %s AND user_id = %s",
-            (inspection_id, g.user_id), one=True,
-        )
-    if inspection is None or not inspection["image_path"]:
+    image = query(
+        "SELECT ii.image_data, ii.image_mime FROM inspection_images ii "
+        "JOIN inspections i ON i.id = ii.inspection_id "
+        "WHERE i.id = %s AND i.user_id = %s AND ii.role = %s",
+        (inspection_id, g.user_id, role), one=True,
+    )
+    if image is None or not image["image_data"]:
         return jsonify({"error": "Image not found"}), 404
 
-    directory, filename = os.path.split(os.path.join(UPLOAD_ROOT, inspection["image_path"]))
-    return send_from_directory(directory, filename)
+    return Response(image["image_data"], mimetype=image["image_mime"] or "image/jpeg")
 
 
 @bp.post("/inspections/hold-recommendation")
