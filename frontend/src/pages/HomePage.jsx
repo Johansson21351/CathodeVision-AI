@@ -1,6 +1,6 @@
 import './HomePage.css'
 import Header from '../components/Header'
-import Card from '../components/cards'
+import Card from '../components/Cards'
 import { useEffect, useRef, useState } from 'react'
 import { getDashboard, inspectImage } from '../api/inspect'
 
