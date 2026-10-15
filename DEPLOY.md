@@ -18,7 +18,7 @@ Hosted providers may not let you create a database named `cathodevision-ai`; if 
 New Web Service from the GitHub repo:
 - Root directory: `backend`
 - Build: `pip install -r requirements.txt`
-- Start: `gunicorn app:app`
+- Start: `gunicorn app:app --timeout 180 --workers 1 --threads 4` (an inspection makes three sequential AI calls; gunicorn's default 30 s timeout kills it)
 - Health check path: `/health`
 
 Environment variables: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_SSL=true`,

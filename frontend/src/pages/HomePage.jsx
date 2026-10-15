@@ -65,7 +65,8 @@ function HomePage() {
 
     refreshDashboard()
     // Live counters: poll instead of only refreshing after an upload.
-    const poll = setInterval(refreshDashboard, 5000)
+    // 30 s keeps load low on the free-tier backend/database.
+    const poll = setInterval(refreshDashboard, 30000)
     return () => clearInterval(poll)
   }, [])
 

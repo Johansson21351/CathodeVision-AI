@@ -2,6 +2,13 @@
 
 CathodeVision AI is a browser-based battery visual-inspection assistant. It helps battery technicians and quality-control workers document cell or pack condition, flag visible defects, read label information, and decide which items need closer human review. It is designed for EV pack assembly, battery refurbishment, second-life triage, and recycling workflows where a dedicated machine-vision line may not be available.
 
+## Live demo
+
+- **App:** https://cvisioai.netlify.app
+- **Demo login:** username `DEMO_USERNAME` / password `DEMO_PASSWORD`. You can also create your own account with **Create account**.
+- The backend runs on a free hosting tier and sleeps when idle, so the first request after a quiet period can take up to a minute. Inspections take roughly 20-60 seconds because three photos are analysed by the AI.
+- Deployment steps: [DEPLOY.md](DEPLOY.md).
+
 > **Important:** This is a visual screening and decision-support tool—not a safety certification, electrical test, or replacement for your site's inspection procedures. AI results can be wrong or incomplete. Follow your organization's safety rules and have a qualified person verify uncertain or high-risk batteries.
 
 ## Technician walkthrough
